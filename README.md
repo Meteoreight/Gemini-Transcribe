@@ -2,6 +2,8 @@
 
 A real-time speech-to-text transcription application using Google's Gemini API. This Electron-based desktop application supports multiple transcription modes including real-time desktop audio capture, microphone input, and batch file processing.
 
+**English** | [日本語](README_ja.md)
+
 ## Features
 
 ### 🎵 Real-time Desktop Audio Transcription
@@ -32,53 +34,180 @@ A real-time speech-to-text transcription application using Google's Gemini API. 
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
-- npm or yarn
-- Google Gemini API key
+Before installing Gemini Transcribe, ensure you have the following installed on your system:
 
-### Installation
+#### Required Software
+- **Node.js** (v16 or higher) - [Download from nodejs.org](https://nodejs.org/)
+- **npm** (comes with Node.js) or **yarn** (optional)
+- **Git** - [Download from git-scm.com](https://git-scm.com/)
 
-1. Clone the repository:
+#### Google Gemini API Access
+- A Google Cloud Platform account
+- Gemini API access and API key
+
+**To verify your prerequisites:**
 ```bash
-git clone <repository-url>
+# Check Node.js version
+node --version  # Should be v16.0.0 or higher
+
+# Check npm version
+npm --version   # Should be 8.0.0 or higher
+
+# Check Git installation
+git --version
+```
+
+### Step-by-Step Installation Guide
+
+#### 1. Clone the Repository
+```bash
+# Clone from GitHub (replace with actual repository URL)
+git clone https://github.com/your-username/gemini-transcribe.git
+
+# Navigate to the project directory
 cd gemini-transcribe
+
+# Verify you're in the correct directory
+ls -la  # Should show package.json, src/, docs/, etc.
 ```
 
-2. Install dependencies:
+#### 2. Install Dependencies
 ```bash
+# Install all required Node.js packages
 npm install
+
+# This may take a few minutes as it downloads Electron and other dependencies
+# You should see "added XXX packages" when complete
 ```
 
-3. Set up environment variables:
+#### 3. Configure Environment Variables
 ```bash
+# Copy the example environment file
 cp .env.example .env
+
+# Open the .env file in your preferred text editor
+# For example:
+nano .env
+# or
+code .env  # if using VS Code
 ```
 
-4. Configure your API key in the `.env` file:
+Edit the `.env` file and configure your settings:
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+# Required: Your Gemini API key
+GEMINI_API_KEY=your_actual_api_key_here
+
+# Optional: Customize other settings
+GEMINI_MODEL=gemini-2.5-flash
+DEFAULT_CHUNK_DURATION=5
+DEFAULT_OUTPUT_FORMAT=vtt
 ```
 
-### Development
-
-1. Build the TypeScript code:
+#### 4. Build the Application
 ```bash
+# Compile TypeScript and prepare assets
 npm run build
+
+# You should see output indicating successful compilation
+# dist/ directory will be created with compiled files
 ```
 
-2. Start the development server:
+#### 5. Test the Installation
 ```bash
+# Start the application in development mode
 npm run dev
+
+# The Gemini Transcribe window should open
+# If successful, you'll see the application interface with tabs
 ```
 
-### Production Build
+### First Launch Setup
 
-1. Build the application:
+#### Initial Configuration
+1. **Application Launch**: When you first run `npm run dev`, the Gemini Transcribe window will open
+2. **Settings Configuration**: 
+   - Click on the "Settings" tab
+   - Enter your Gemini API key if not already configured
+   - Select your preferred model (Gemini 2.5 Flash recommended for beginners)
+   - Set your output directory (defaults to ~/Documents/Transcriptions)
+   - Choose output format (VTT, SRT, or Plain Text)
+3. **Permission Setup**:
+   - **macOS**: Grant screen recording permission for desktop audio capture
+   - **Windows/Linux**: Ensure microphone permissions are enabled
+   - **All platforms**: Allow the application to access your microphone when prompted
+
+#### Verify Everything Works
+1. **Test Microphone**: 
+   - Go to "Speech-to-Text" tab
+   - Click "Test" next to the microphone selection
+   - You should see audio level bars moving when you speak
+2. **Test Settings**: 
+   - Go to "Settings" tab
+   - Click "Save Settings"
+   - You should see "Settings saved" confirmation
+
+### Quick Start Commands
+
 ```bash
-npm run dist
+# Development workflow
+npm run dev          # Start application in development mode
+npm run build        # Build TypeScript to JavaScript
+npm run clean        # Clean build artifacts
+
+# Code quality
+npm run lint         # Check code for errors
+npm run format       # Format code with Prettier
+
+# Production
+npm run dist         # Build distributable application
 ```
 
-The built application will be available in the `release` directory.
+### Troubleshooting Installation
+
+#### Common Issues and Solutions
+
+**❌ "node: command not found"**
+- Install Node.js from [nodejs.org](https://nodejs.org/)
+- Restart your terminal after installation
+
+**❌ "npm install" fails with permission errors**
+- On macOS/Linux: Use `sudo npm install` (not recommended) or set up npm properly
+- Better solution: Use nvm (Node Version Manager) to install Node.js
+
+**❌ "Cannot find module 'electron'"**
+- Run `npm install` to ensure all dependencies are installed
+- Delete `node_modules/` and run `npm install` again if needed
+
+**❌ Application window doesn't open**
+- Check the terminal for error messages
+- Ensure you ran `npm run build` before `npm run dev`
+- Try `npm run clean && npm run build && npm run dev`
+
+**❌ "API key invalid" error**
+- Verify your API key is correct in the `.env` file
+- Check that Gemini API is enabled in your Google Cloud project
+- Ensure there are no extra spaces or quotes around the API key
+
+#### Getting Help
+If you encounter issues not covered here:
+1. Check the [Troubleshooting](#troubleshooting) section below
+2. Look at the terminal output for specific error messages
+3. Ensure all prerequisites are properly installed
+4. Try the installation steps again from a clean directory
+
+### Development vs Production
+
+#### Development Mode (`npm run dev`)
+- Uses source files with hot reload
+- Shows developer tools
+- Detailed error messages
+- Suitable for testing and development
+
+#### Production Build (`npm run dist`)
+- Creates optimized, packaged application
+- Smaller file size and better performance
+- Includes auto-updater functionality
+- Ready for distribution to end users
 
 ## Usage
 

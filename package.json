@@ -2,7 +2,7 @@
   "name": "gemini-transcribe",
   "version": "1.0.0",
   "description": "Real-time speech-to-text transcription application using Gemini API",
-  "main": "dist/main.js",
+  "main": "dist/main/main.js",
   "homepage": "./",
   "directories": {
     "doc": "docs"
