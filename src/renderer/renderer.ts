@@ -1,17 +1,13 @@
+import { STTProviderFactory } from '../shared/provider-factory';
+import { SettingsManager } from '../shared/settings-manager';
+import { STTProvider, ProviderType, AudioChunk, TranscriptionOptions } from '../shared/types';
+
 // Application state management
 interface AppState {
   currentTab: string;
   isRecording: boolean;
   selectedFiles: File[];
-  settings: {
-    apiKey: string;
-    model: string;
-    chunkDuration: number;
-    outputDirectory: string;
-    outputFormat: string;
-    autoSave: boolean;
-    includeTimestamps: boolean;
-  };
+  currentProvider: STTProvider | null;
 }
 
 class TranscribeRenderer {
@@ -19,28 +15,30 @@ class TranscribeRenderer {
     currentTab: 'realtime',
     isRecording: false,
     selectedFiles: [],
-    settings: {
-      apiKey: '',
-      model: 'gemini-2.5-flash',
-      chunkDuration: 5,
-      outputDirectory: '',
-      outputFormat: 'vtt',
-      autoSave: true,
-      includeTimestamps: true,
-    },
+    currentProvider: null,
   };
 
+  private settingsManager: SettingsManager;
   private mediaRecorder: MediaRecorder | null = null;
   private audioContext: AudioContext | null = null;
   private recordingStartTime: number = 0;
   private durationUpdateInterval: NodeJS.Timeout | null = null;
 
   constructor() {
+    this.settingsManager = new SettingsManager();
     this.initializeApp();
   }
 
   private async initializeApp(): Promise<void> {
-    await this.loadSettings();
+    // Initialize provider factory
+    STTProviderFactory.initialize();
+    
+    // Load settings
+    await this.settingsManager.loadSettings();
+    
+    // Initialize current provider
+    await this.initializeCurrentProvider();
+    
     this.setupEventListeners();
     this.setupTabNavigation();
     this.setupFileHandling();
@@ -49,6 +47,25 @@ class TranscribeRenderer {
     
     // Listen for IPC events
     this.setupIPC();
+  }
+
+  private async initializeCurrentProvider(): Promise<void> {
+    try {
+      const currentProviderType = this.settingsManager.getCurrentProvider();
+      const providerConfig = this.settingsManager.getProviderConfig(currentProviderType);
+      
+      console.log(`Initializing provider: ${currentProviderType}`);
+      
+      this.state.currentProvider = await STTProviderFactory.createProvider(currentProviderType, providerConfig);
+      await this.state.currentProvider.initialize(providerConfig);
+      
+      console.log(`Provider ${currentProviderType} initialized successfully`);
+      this.updateProviderStatus();
+      
+    } catch (error: any) {
+      console.error('Failed to initialize provider:', error);
+      this.updateStatus(`Provider initialization failed: ${error.message}`);
+    }
   }
 
   private setupEventListeners(): void {
@@ -90,9 +107,16 @@ class TranscribeRenderer {
     const copyBtn = document.getElementById('copy-transcription');
     copyBtn?.addEventListener('click', () => this.copyTranscription('transcription-area'));
 
-    // API key toggle
-    const toggleApiKeyBtn = document.getElementById('toggle-api-key');
-    toggleApiKeyBtn?.addEventListener('click', () => this.toggleApiKeyVisibility());
+    // Provider selection
+    const providerSelect = document.getElementById('stt-provider');
+    providerSelect?.addEventListener('change', (e) => this.onProviderChange(e));
+
+    // API key toggles
+    const toggleGeminiApiKeyBtn = document.getElementById('toggle-gemini-api-key');
+    toggleGeminiApiKeyBtn?.addEventListener('click', () => this.toggleApiKeyVisibility('gemini'));
+    
+    const toggleOpenAIApiKeyBtn = document.getElementById('toggle-openai-api-key');
+    toggleOpenAIApiKeyBtn?.addEventListener('click', () => this.toggleApiKeyVisibility('openai'));
 
     // Browse output directory
     const browseOutputDirBtn = document.getElementById('browse-output-dir');
@@ -202,7 +226,7 @@ class TranscribeRenderer {
           microphoneSelect.appendChild(option);
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error enumerating audio devices:', error);
     }
   }
@@ -280,12 +304,12 @@ class TranscribeRenderer {
         }
       };
 
-      this.mediaRecorder.start(this.state.settings.chunkDuration * 1000);
+      this.mediaRecorder.start(this.settingsManager.getChunkDuration() * 1000);
       this.startDurationTimer();
       this.updateRecordingUI(true);
       this.updateStatus('Recording desktop audio...');
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting recording:', error);
       this.updateStatus('Failed to start recording');
       alert('Failed to start desktop audio recording. Please ensure you have granted screen recording permissions.');
@@ -324,13 +348,13 @@ class TranscribeRenderer {
         }
       };
 
-      this.mediaRecorder.start(this.state.settings.chunkDuration * 1000);
+      this.mediaRecorder.start(this.settingsManager.getChunkDuration() * 1000);
       this.startDurationTimer();
       this.updateRecordingUI(true);
       this.updateStatus('Recording from microphone...');
       this.startAudioLevelMonitoring(stream);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting speech recording:', error);
       this.updateStatus('Failed to start microphone recording');
       alert('Failed to start microphone recording. Please ensure you have granted microphone permissions.');
@@ -349,7 +373,7 @@ class TranscribeRenderer {
     this.updateRecordingUI(false);
     this.updateStatus('Ready');
     
-    if (this.state.settings.autoSave) {
+    if (this.settingsManager.getAutoSave()) {
       await this.saveTranscription();
     }
   }
@@ -411,42 +435,73 @@ class TranscribeRenderer {
 
   private async processAudioChunk(audioBlob: Blob): Promise<void> {
     try {
-      // Convert blob to base64 for API transmission
+      // Convert blob to ArrayBuffer
       const arrayBuffer = await audioBlob.arrayBuffer();
-      const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
       // Get current settings
       const inputLanguage = (document.getElementById('input-language') as HTMLSelectElement)?.value || 'auto';
       const outputLanguage = (document.getElementById('output-language') as HTMLSelectElement)?.value || 'auto';
 
-      // TODO: Send to transcription service
-      const result = await this.transcribeAudio(base64Audio, {
-        inputLanguage,
-        outputLanguage,
-        includeTimestamps: this.state.settings.includeTimestamps,
-      });
+      // Build transcription options
+      const options: TranscriptionOptions = {
+        language: inputLanguage,
+        outputLanguage: outputLanguage,
+        includeTimestamps: this.settingsManager.getIncludeTimestamps(),
+      };
+
+      // Transcribe audio
+      const result = await this.transcribeAudio(arrayBuffer, options);
 
       this.appendTranscription(result.text);
       this.updateChunkCount();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing audio chunk:', error);
+      this.updateStatus(`Transcription error: ${error.message}`);
     }
   }
 
-  private async transcribeAudio(_audioData: string, options: any): Promise<{text: string}> {
-    // Placeholder for actual Gemini API integration
-    // This will be implemented in the next phase
-    console.log('Transcribing audio with options:', options);
-    
-    // Simulate API response
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve({
-          text: `[${new Date().toLocaleTimeString()}] Transcribed text from audio chunk...`
-        });
-      }, 1000);
-    });
+  private async transcribeAudio(audioData: ArrayBuffer, options: TranscriptionOptions): Promise<{text: string}> {
+    if (!this.state.currentProvider) {
+      throw new Error('No STT provider is configured');
+    }
+
+    try {
+      // Create audio chunk
+      const audioChunk: AudioChunk = {
+        data: audioData,
+        duration: this.estimateAudioDuration(audioData),
+        timestamp: Date.now(),
+        format: 'wav', // Assuming WAV format from MediaRecorder
+        sampleRate: 16000, // Standard sample rate
+        channels: 1 // Mono
+      };
+
+      // Perform transcription
+      const result = await this.state.currentProvider.transcribe(audioChunk, options);
+      
+      return {
+        text: result.text
+      };
+      
+    } catch (error: any) {
+      console.error('Transcription error:', error);
+      
+      // Check for STTError by type property instead of instanceof
+      if (error.name === 'STTError') {
+        throw new Error(`${error.provider || 'STT'} Error: ${error.message}`);
+      }
+      
+      throw new Error(`Transcription failed: ${error.message}`);
+    }
+  }
+
+  private estimateAudioDuration(audioData: ArrayBuffer): number {
+    // Simple estimation: assuming 16-bit mono at 16kHz
+    const bytesPerSample = 2; // 16-bit = 2 bytes
+    const sampleRate = 16000;
+    const samples = audioData.byteLength / bytesPerSample;
+    return samples / sampleRate;
   }
 
   private appendTranscription(text: string): void {
@@ -499,7 +554,7 @@ class TranscribeRenderer {
             btn.textContent = originalText;
           }, 2000);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to copy text:', error);
       }
     }
@@ -591,15 +646,63 @@ class TranscribeRenderer {
         stream.getTracks().forEach(track => track.stop());
       }, 5000);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Microphone test failed:', error);
       alert('Microphone test failed. Please check your permissions.');
     }
   }
 
-  private toggleApiKeyVisibility(): void {
-    const apiKeyInput = document.getElementById('api-key') as HTMLInputElement;
-    const toggleBtn = document.getElementById('toggle-api-key');
+  private async onProviderChange(event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const newProviderType = select.value as ProviderType;
+    
+    try {
+      // Update settings
+      this.settingsManager.setCurrentProvider(newProviderType);
+      await this.settingsManager.saveSettings();
+      
+      // Initialize new provider
+      await this.initializeCurrentProvider();
+      
+      // Update UI
+      this.updateProviderSettingsUI(newProviderType);
+      this.updateStatus(`Switched to ${newProviderType} provider`);
+      
+    } catch (error: any) {
+      console.error('Failed to change provider:', error);
+      this.updateStatus(`Failed to switch provider: ${error.message}`);
+    }
+  }
+
+  private updateProviderSettingsUI(providerType: ProviderType): void {
+    // Hide all provider settings
+    document.querySelectorAll('.provider-settings').forEach(element => {
+      (element as HTMLElement).style.display = 'none';
+    });
+    
+    // Show selected provider settings
+    const settingsElement = document.getElementById(`${providerType.replace('_', '-')}-settings`);
+    if (settingsElement) {
+      settingsElement.style.display = 'block';
+    }
+  }
+
+  private updateProviderStatus(): void {
+    const connectionStatus = document.getElementById('connection-status');
+    if (connectionStatus && this.state.currentProvider) {
+      if (this.state.currentProvider.isConfigured()) {
+        connectionStatus.textContent = `Connected (${this.state.currentProvider.name})`;
+        connectionStatus.style.color = '#4CAF50';
+      } else {
+        connectionStatus.textContent = `${this.state.currentProvider.name} - Not Configured`;
+        connectionStatus.style.color = '#FF9800';
+      }
+    }
+  }
+
+  private toggleApiKeyVisibility(provider: string): void {
+    const apiKeyInput = document.getElementById(`${provider}-api-key`) as HTMLInputElement;
+    const toggleBtn = document.getElementById(`toggle-${provider}-api-key`);
     
     if (apiKeyInput && toggleBtn) {
       if (apiKeyInput.type === 'password') {
@@ -623,102 +726,176 @@ class TranscribeRenderer {
         const outputDirInput = document.getElementById('output-directory') as HTMLInputElement;
         if (outputDirInput) {
           outputDirInput.value = result.filePaths[0];
-          this.state.settings.outputDirectory = result.filePaths[0];
+          this.settingsManager.setOutputDirectory(result.filePaths[0]);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error browsing for directory:', error);
     }
   }
 
   private async saveSettings(): Promise<void> {
-    // Collect settings from form
-    const apiKey = (document.getElementById('api-key') as HTMLInputElement)?.value || '';
-    const model = (document.getElementById('model-select') as HTMLSelectElement)?.value || 'gemini-2.5-flash';
-    const chunkDuration = parseInt((document.getElementById('chunk-duration') as HTMLInputElement)?.value || '5');
-    const outputFormat = (document.getElementById('output-format') as HTMLSelectElement)?.value || 'vtt';
-    const autoSave = (document.getElementById('auto-save') as HTMLInputElement)?.checked || false;
-    const includeTimestamps = (document.getElementById('include-timestamps') as HTMLInputElement)?.checked || true;
+    try {
+      // Get current provider type
+      const providerType = this.settingsManager.getCurrentProvider();
+      
+      // Collect provider-specific settings
+      switch (providerType) {
+        case ProviderType.GEMINI: {
+          const apiKey = (document.getElementById('gemini-api-key') as HTMLInputElement)?.value || '';
+          const model = (document.getElementById('gemini-model') as HTMLSelectElement)?.value || 'gemini-2.5-flash';
+          
+          this.settingsManager.updateProviderConfig(ProviderType.GEMINI, {
+            apiKey,
+            model
+          });
+          break;
+        }
+        
+        case ProviderType.OPENAI: {
+          const apiKey = (document.getElementById('openai-api-key') as HTMLInputElement)?.value || '';
+          const model = (document.getElementById('openai-model') as HTMLSelectElement)?.value || 'whisper-1';
+          const responseFormat = (document.getElementById('openai-response-format') as HTMLSelectElement)?.value || 'json';
+          
+          this.settingsManager.updateProviderConfig(ProviderType.OPENAI, {
+            apiKey,
+            model,
+            responseFormat
+          });
+          break;
+        }
+        
+        case ProviderType.LOCAL_WHISPER: {
+          const modelSize = (document.getElementById('whisper-model-size') as HTMLSelectElement)?.value || 'base';
+          const device = (document.getElementById('whisper-device') as HTMLSelectElement)?.value || 'cpu';
+          const threads = parseInt((document.getElementById('whisper-threads') as HTMLInputElement)?.value || '4');
+          
+          this.settingsManager.updateProviderConfig(ProviderType.LOCAL_WHISPER, {
+            modelSize,
+            device,
+            threads
+          });
+          break;
+        }
+      }
+      
+      // Collect general settings
+      const chunkDuration = parseInt((document.getElementById('chunk-duration') as HTMLInputElement)?.value || '5');
+      const outputFormat = (document.getElementById('output-format') as HTMLSelectElement)?.value || 'vtt';
+      const autoSave = (document.getElementById('auto-save') as HTMLInputElement)?.checked || false;
+      const includeTimestamps = (document.getElementById('include-timestamps') as HTMLInputElement)?.checked || true;
+      
+      this.settingsManager.setChunkDuration(chunkDuration);
+      this.settingsManager.setOutputFormat(outputFormat);
+      this.settingsManager.setAutoSave(autoSave);
+      this.settingsManager.setIncludeTimestamps(includeTimestamps);
 
-    this.state.settings = {
-      ...this.state.settings,
-      apiKey,
-      model,
-      chunkDuration,
-      outputFormat,
-      autoSave,
-      includeTimestamps,
-    };
-
-    // Save to local storage
-    localStorage.setItem('transcribe-settings', JSON.stringify(this.state.settings));
-    
-    // Update status
-    this.updateStatus('Settings saved');
-    
-    // Show success message
-    const saveBtn = document.getElementById('save-settings');
-    if (saveBtn) {
-      const originalText = saveBtn.textContent;
-      saveBtn.textContent = 'Saved!';
-      setTimeout(() => {
-        saveBtn.textContent = originalText;
-      }, 2000);
+      // Save settings
+      await this.settingsManager.saveSettings();
+      
+      // Reinitialize current provider with new settings
+      await this.initializeCurrentProvider();
+      
+      // Update status
+      this.updateStatus('Settings saved');
+      
+      // Show success message
+      const saveBtn = document.getElementById('save-settings');
+      if (saveBtn) {
+        const originalText = saveBtn.textContent;
+        saveBtn.textContent = 'Saved!';
+        setTimeout(() => {
+          saveBtn.textContent = originalText;
+        }, 2000);
+      }
+      
+    } catch (error: any) {
+      console.error('Error saving settings:', error);
+      this.updateStatus(`Failed to save settings: ${error.message}`);
     }
   }
 
   private async resetSettings(): Promise<void> {
     if (confirm('Are you sure you want to reset all settings to defaults?')) {
-      this.state.settings = {
-        apiKey: '',
-        model: 'gemini-2.5-flash',
-        chunkDuration: 5,
-        outputDirectory: '',
-        outputFormat: 'vtt',
-        autoSave: true,
-        includeTimestamps: true,
-      };
-
-      localStorage.removeItem('transcribe-settings');
-      this.updateSettingsUI();
-      this.updateStatus('Settings reset to defaults');
-    }
-  }
-
-  private async loadSettings(): Promise<void> {
-    try {
-      const saved = localStorage.getItem('transcribe-settings');
-      if (saved) {
-        this.state.settings = { ...this.state.settings, ...JSON.parse(saved) };
+      try {
+        this.settingsManager.resetToDefaults();
+        await this.settingsManager.saveSettings();
+        
+        await this.initializeCurrentProvider();
+        this.updateSettingsUI();
+        this.updateStatus('Settings reset to defaults');
+        
+      } catch (error: any) {
+        console.error('Error resetting settings:', error);
+        this.updateStatus(`Failed to reset settings: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error loading settings:', error);
     }
   }
 
   private updateSettingsUI(): void {
-    (document.getElementById('api-key') as HTMLInputElement).value = this.state.settings.apiKey;
-    (document.getElementById('model-select') as HTMLSelectElement).value = this.state.settings.model;
-    (document.getElementById('chunk-duration') as HTMLInputElement).value = this.state.settings.chunkDuration.toString();
-    (document.getElementById('output-directory') as HTMLInputElement).value = this.state.settings.outputDirectory;
-    (document.getElementById('output-format') as HTMLSelectElement).value = this.state.settings.outputFormat;
-    (document.getElementById('auto-save') as HTMLInputElement).checked = this.state.settings.autoSave;
-    (document.getElementById('include-timestamps') as HTMLInputElement).checked = this.state.settings.includeTimestamps;
+    const settings = this.settingsManager.getSettings();
+    
+    // Update provider selector
+    (document.getElementById('stt-provider') as HTMLSelectElement).value = settings.currentProvider;
+    
+    // Update provider-specific settings
+    // Gemini settings
+    (document.getElementById('gemini-api-key') as HTMLInputElement).value = (settings.providers.gemini as any).apiKey || '';
+    (document.getElementById('gemini-model') as HTMLSelectElement).value = (settings.providers.gemini as any).model || 'gemini-2.5-flash';
+    
+    // OpenAI settings
+    (document.getElementById('openai-api-key') as HTMLInputElement).value = (settings.providers.openai as any).apiKey || '';
+    (document.getElementById('openai-model') as HTMLSelectElement).value = (settings.providers.openai as any).model || 'whisper-1';
+    (document.getElementById('openai-response-format') as HTMLSelectElement).value = (settings.providers.openai as any).responseFormat || 'json';
+    
+    // Local Whisper settings
+    (document.getElementById('whisper-model-size') as HTMLSelectElement).value = (settings.providers.local_whisper as any).modelSize || 'base';
+    (document.getElementById('whisper-device') as HTMLSelectElement).value = (settings.providers.local_whisper as any).device || 'cpu';
+    (document.getElementById('whisper-threads') as HTMLInputElement).value = (settings.providers.local_whisper as any).threads?.toString() || '4';
+    
+    // General settings
+    (document.getElementById('chunk-duration') as HTMLInputElement).value = settings.chunkDuration.toString();
+    (document.getElementById('output-directory') as HTMLInputElement).value = settings.outputDirectory;
+    (document.getElementById('output-format') as HTMLSelectElement).value = settings.outputFormat;
+    (document.getElementById('auto-save') as HTMLInputElement).checked = settings.autoSave;
+    (document.getElementById('include-timestamps') as HTMLInputElement).checked = settings.includeTimestamps;
+    
+    // Show current provider settings
+    this.updateProviderSettingsUI(settings.currentProvider);
   }
 
   private updateUI(): void {
     this.updateSettingsUI();
     this.updateStatus('Ready');
-    
-    const connectionStatus = document.getElementById('connection-status');
-    if (connectionStatus) {
-      connectionStatus.textContent = this.state.settings.apiKey ? 'Connected' : 'Not configured';
-    }
+    this.updateProviderStatus();
   }
 
   private async saveTranscription(): Promise<void> {
-    // TODO: Implement transcription saving
-    console.log('Saving transcription...');
+    try {
+      const transcriptionArea = document.getElementById('transcription-area') as HTMLElement;
+      if (!transcriptionArea) return;
+
+      const text = transcriptionArea.textContent || '';
+      if (!text || text.trim() === '') return;
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `transcription-${timestamp}.${this.settingsManager.getOutputFormat()}`;
+
+      // For now, just download as a file
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      this.updateStatus('Transcription saved');
+      
+    } catch (error: any) {
+      console.error('Error saving transcription:', error);
+      this.updateStatus(`Failed to save transcription: ${error.message}`);
+    }
   }
 
   private formatDuration(milliseconds: number): string {
