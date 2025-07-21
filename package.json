@@ -1,0 +1,69 @@
+{
+  "name": "gemini-transcribe",
+  "version": "1.0.0",
+  "description": "Real-time speech-to-text transcription application using Gemini API",
+  "main": "dist/main.js",
+  "homepage": "./",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "npm run build && electron .",
+    "build": "tsc && npm run copy-assets",
+    "copy-assets": "cp -r src/renderer/*.html src/renderer/*.css dist/renderer/",
+    "build:electron": "electron-builder",
+    "dist": "npm run build && electron-builder",
+    "clean": "rm -rf dist",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write \"src/**/*.{ts,js,html,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,html,css}\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "electron",
+    "speech-to-text",
+    "transcription",
+    "gemini",
+    "audio"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "@typescript-eslint/eslint-plugin": "^8.37.0",
+    "@typescript-eslint/parser": "^8.37.0",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "dotenv": "^17.2.0"
+  },
+  "build": {
+    "appId": "com.gemini.transcribe",
+    "productName": "Gemini Transcribe",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/renderer/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+    <title>Gemini Transcribe</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <h1 class="app-title">Gemini Transcribe</h1>
+                <div class="header-controls">
+                    <button id="settings-btn" class="header-btn" title="Settings">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"></circle>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Tab Navigation -->
+        <nav class="tab-navigation">
+            <button class="tab-btn active" data-tab="realtime">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                Real-time STT
+            </button>
+            <button class="tab-btn" data-tab="file">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14,2 14,8 20,8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10,9 9,9 8,9"></polyline>
+                </svg>
+                File STT
+            </button>
+            <button class="tab-btn" data-tab="speech">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+                Speech-to-Text
+            </button>
+            <button class="tab-btn" data-tab="settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1 1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                Settings
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Real-time STT Tab -->
+            <div id="realtime-tab" class="tab-content active">
+                <div class="tab-header">
+                    <h2>Real-time Desktop Audio Transcription</h2>
+                    <p>Capture and transcribe desktop audio in real-time</p>
+                </div>
+                
+                <div class="controls-section">
+                    <div class="control-group">
+                        <button id="realtime-start-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5,3 19,12 5,21"></polygon>
+                            </svg>
+                            Start Recording
+                        </button>
+                        
+                        <div class="language-controls">
+                            <div class="control-item">
+                                <label for="input-language">Input Language:</label>
+                                <select id="input-language">
+                                    <option value="auto">Auto-detect</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">Japanese</option>
+                                </select>
+                            </div>
+                            
+                            <div class="control-item">
+                                <label for="output-language">Output Language:</label>
+                                <select id="output-language">
+                                    <option value="auto">Same as input</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">Japanese</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="transcription-section">
+                    <div class="transcription-header">
+                        <h3>Live Transcription</h3>
+                        <div class="transcription-controls">
+                            <button id="clear-transcription" class="secondary-btn">Clear</button>
+                            <button id="copy-transcription" class="secondary-btn">Copy</button>
+                        </div>
+                    </div>
+                    <div id="transcription-area" class="transcription-text">
+                        <div class="placeholder">Transcribed text will appear here...</div>
+                    </div>
+                </div>
+
+                <div class="status-section">
+                    <div class="status-item">
+                        <span class="status-label">Status:</span>
+                        <span id="recording-status" class="status-value">Ready</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Duration:</span>
+                        <span id="recording-duration" class="status-value">00:00:00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Chunks:</span>
+                        <span id="chunks-processed" class="status-value">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- File STT Tab -->
+            <div id="file-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>Audio File Transcription</h2>
+                    <p>Upload and transcribe audio files</p>
+                </div>
+                
+                <div class="file-upload-section">
+                    <div id="file-drop-zone" class="file-drop-zone">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14,2 14,8 20,8"></polyline>
+                        </svg>
+                        <h3>Drop audio files here or click to browse</h3>
+                        <p>Supported formats: MP3, WAV, M4A, FLAC, OGG</p>
+                        <input type="file" id="file-input" multiple accept=".mp3,.wav,.m4a,.flac,.ogg,.aac" style="display: none;">
+                    </div>
+                </div>
+
+                <div id="file-list-section" class="file-list-section" style="display: none;">
+                    <h3>Selected Files</h3>
+                    <div id="file-list" class="file-list"></div>
+                    
+                    <div class="file-controls">
+                        <div class="language-controls">
+                            <div class="control-item">
+                                <label for="file-output-language">Output Language:</label>
+                                <select id="file-output-language">
+                                    <option value="auto">Same as input</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">Japanese</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button id="process-files-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="5,3 19,12 5,21"></polygon>
+                            </svg>
+                            Process Files
+                        </button>
+                    </div>
+                </div>
+
+                <div id="processing-section" class="processing-section" style="display: none;">
+                    <h3>Processing Progress</h3>
+                    <div id="processing-list" class="processing-list"></div>
+                </div>
+            </div>
+
+            <!-- Speech-to-Text Tab -->
+            <div id="speech-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>Microphone Speech-to-Text</h2>
+                    <p>Record and transcribe from microphone input</p>
+                </div>
+                
+                <div class="microphone-section">
+                    <div class="control-group">
+                        <div class="control-item">
+                            <label for="microphone-select">Audio Source:</label>
+                            <select id="microphone-select">
+                                <option value="default">Default Microphone</option>
+                            </select>
+                        </div>
+                        
+                        <div class="audio-level">
+                            <span class="audio-level-label">Input Level:</span>
+                            <div class="audio-level-meter">
+                                <div id="audio-level-bar" class="audio-level-bar"></div>
+                            </div>
+                            <button id="test-microphone" class="secondary-btn">Test</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-section">
+                    <div class="control-group">
+                        <button id="speech-start-btn" class="primary-btn">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                            Start Recording
+                        </button>
+                        
+                        <div class="language-controls">
+                            <div class="control-item">
+                                <label for="speech-output-language">Output Language:</label>
+                                <select id="speech-output-language">
+                                    <option value="auto">Same as input</option>
+                                    <option value="en">English</option>
+                                    <option value="ja">Japanese</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="transcription-section">
+                    <div class="transcription-header">
+                        <h3>Live Transcription</h3>
+                        <div class="transcription-controls">
+                            <button id="speech-clear-transcription" class="secondary-btn">Clear</button>
+                            <button id="speech-copy-transcription" class="secondary-btn">Copy</button>
+                        </div>
+                    </div>
+                    <div id="speech-transcription-area" class="transcription-text">
+                        <div class="placeholder">Microphone transcription will appear here...</div>
+                    </div>
+                </div>
+
+                <div class="status-section">
+                    <div class="status-item">
+                        <span class="status-label">Status:</span>
+                        <span id="speech-status" class="status-value">Ready</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Recording:</span>
+                        <span id="speech-duration" class="status-value">00:00:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings-tab" class="tab-content">
+                <div class="tab-header">
+                    <h2>Settings</h2>
+                    <p>Configure application preferences</p>
+                </div>
+                
+                <div class="settings-sections">
+                    <div class="settings-section">
+                        <h3>API Configuration</h3>
+                        <div class="setting-item">
+                            <label for="api-key">Gemini API Key:</label>
+                            <div class="input-group">
+                                <input type="password" id="api-key" placeholder="Enter your Gemini API key">
+                                <button id="toggle-api-key" class="secondary-btn">Show</button>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="model-select">Model:</label>
+                            <select id="model-select">
+                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            </select>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="chunk-duration">Chunk Duration (seconds):</label>
+                            <input type="number" id="chunk-duration" min="1" max="30" value="5">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Output Settings</h3>
+                        <div class="setting-item">
+                            <label for="output-directory">Output Directory:</label>
+                            <div class="input-group">
+                                <input type="text" id="output-directory" readonly>
+                                <button id="browse-output-dir" class="secondary-btn">Browse</button>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label for="output-format">Output Format:</label>
+                            <select id="output-format">
+                                <option value="vtt">VTT (WebVTT)</option>
+                                <option value="srt">SRT (SubRip)</option>
+                                <option value="txt">Plain Text</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3>Application Settings</h3>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="auto-save">
+                                Auto-save transcriptions
+                            </label>
+                        </div>
+                        
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="include-timestamps">
+                                Include timestamps in output
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button id="save-settings" class="primary-btn">Save Settings</button>
+                        <button id="reset-settings" class="secondary-btn">Reset to Defaults</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <footer class="status-bar">
+            <div class="status-left">
+                <span id="app-status">Ready</span>
+            </div>
+            <div class="status-right">
+                <span id="connection-status">Disconnected</span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
