@@ -31,6 +31,8 @@ export class GeminiProvider implements STTProvider {
     processingTime: 0,
     audioDuration: 0
   };
+  private lastRequestTime: number = 0;
+  private minRequestInterval: number = 100; // Minimum 100ms between requests
 
   constructor(config: ProviderConfig) {
     this.config = config as GeminiConfig;
@@ -83,6 +85,56 @@ export class GeminiProvider implements STTProvider {
       throw new STTError('Provider not initialized', 'NOT_INITIALIZED');
     }
 
+    return this.transcribeWithRetry(audioData, options, 3);
+  }
+
+  private async transcribeWithRetry(audioData: AudioChunk, options: TranscriptionOptions, maxRetries: number): Promise<TranscriptionResult> {
+    let lastError: STTError | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Rate limiting: enforce minimum interval between requests
+        await this.enforceRateLimit();
+        
+        const result = await this.performTranscription(audioData, options);
+        
+        // Success - reset any retry state if needed
+        return result;
+        
+      } catch (error: any) {
+        lastError = error instanceof STTError ? error : new STTError(`Transcription failed: ${error.message}`, 'TRANSCRIPTION_ERROR');
+        
+        console.log(`Transcription attempt ${attempt + 1} failed:`, lastError.message);
+        
+        // Don't retry non-retryable errors
+        if (!lastError.retryable || attempt >= maxRetries) {
+          break;
+        }
+        
+        // Exponential backoff: wait before retrying
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000); // Max 10 seconds
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError;
+  }
+
+  private async enforceRateLimit(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    
+    if (timeSinceLastRequest < this.minRequestInterval) {
+      const delay = this.minRequestInterval - timeSinceLastRequest;
+      console.log(`Rate limiting: waiting ${delay}ms`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
+    this.lastRequestTime = Date.now();
+  }
+
+  private async performTranscription(audioData: AudioChunk, options: TranscriptionOptions): Promise<TranscriptionResult> {
     const startTime = Date.now();
 
     try {
@@ -104,9 +156,19 @@ export class GeminiProvider implements STTProvider {
 
       // Convert audio data to base64
       const base64Audio = this.arrayBufferToBase64(audioData.data);
+      const mimeType = this.getMimeType(audioData.format);
+      
+      // Log audio information for debugging
+      console.log('Gemini transcription request:', {
+        audioSize: audioData.data.byteLength,
+        duration: audioData.duration,
+        format: audioData.format,
+        mimeType: mimeType,
+        base64Length: base64Audio.length
+      });
       
       // Get the generative model
-      const model = this.client.getGenerativeModel({ 
+      const model = this.client!.getGenerativeModel({ 
         model: this.config.model,
         generationConfig: {
           temperature: this.config.temperature ?? 0.1,
@@ -127,7 +189,7 @@ export class GeminiProvider implements STTProvider {
             { text: prompt },
             {
               inlineData: {
-                mimeType: this.getMimeType(audioData.format),
+                mimeType: mimeType,
                 data: base64Audio
               }
             }
@@ -139,13 +201,40 @@ export class GeminiProvider implements STTProvider {
       const result = await model.generateContent(request);
       const response = result.response;
       
+      // Enhanced debugging information
+      console.log('Gemini API response:', {
+        hasResponse: !!response,
+        hasText: !!response?.text,
+        candidates: response?.candidates?.length || 0,
+        finishReason: response?.candidates?.[0]?.finishReason,
+        usageMetadata: response?.usageMetadata
+      });
+      
       if (!response) {
         throw new STTError('No response from Gemini API', 'NO_RESPONSE');
       }
 
       const text = response?.text();
-      if (!text) {
-        throw new STTError('No text in response', 'NO_TEXT');
+      if (!text || text.trim().length === 0) {
+        // Log more detailed response info for debugging
+        console.error('Empty response details:', {
+          text: text,
+          candidates: response.candidates,
+          finishReason: response.candidates?.[0]?.finishReason,
+          safetyRatings: response.candidates?.[0]?.safetyRatings
+        });
+        
+        // Check if response was blocked by safety filters
+        if (response.candidates?.[0]?.finishReason === 'SAFETY') {
+          throw new STTError('Audio content was blocked by safety filters', 'CONTENT_BLOCKED');
+        }
+        
+        // Check if response was too short
+        if (response.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+          throw new STTError('Response truncated due to token limit', 'TOKEN_LIMIT');
+        }
+        
+        throw new STTError('No text in response - audio may be silent or unsupported format', 'NO_TEXT');
       }
 
       // Process the response
@@ -316,9 +405,24 @@ export class GeminiProvider implements STTProvider {
       'm4a': 'audio/m4a',
       'flac': 'audio/flac',
       'aac': 'audio/aac',
-      'ogg': 'audio/ogg'
+      'ogg': 'audio/ogg',
+      'webm': 'audio/webm', // WebM audio format
+      'opus': 'audio/ogg' // Opus is often in OGG container
     };
-    return mimeTypes[format.toLowerCase()] || 'audio/wav';
+    
+    const lowerFormat = format.toLowerCase();
+    
+    // Handle WebM with specific codecs
+    if (lowerFormat.includes('webm')) {
+      return 'audio/webm';
+    }
+    
+    // Handle audio/webm MIME type passed from MediaRecorder
+    if (lowerFormat.startsWith('audio/')) {
+      return lowerFormat;
+    }
+    
+    return mimeTypes[lowerFormat] || 'audio/wav';
   }
 
   private updateUsageMetrics(processingTime: number, audioDuration: number, usageMetadata?: any): void {
