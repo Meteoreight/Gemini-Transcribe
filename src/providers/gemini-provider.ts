@@ -32,7 +32,12 @@ export class GeminiProvider implements STTProvider {
     audioDuration: 0
   };
   private lastRequestTime: number = 0;
-  private minRequestInterval: number = 100; // Minimum 100ms between requests
+  private minRequestInterval: number = 500; // Minimum 500ms between requests
+  private requestQueue: Array<() => Promise<any>> = [];
+  private isProcessingQueue: boolean = false;
+  private consecutiveErrors: number = 0;
+  private lastErrorTime: number = 0;
+  private connectionHealthy: boolean = true;
 
   constructor(config: ProviderConfig) {
     this.config = config as GeminiConfig;
@@ -93,28 +98,47 @@ export class GeminiProvider implements STTProvider {
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        // Rate limiting: enforce minimum interval between requests
-        await this.enforceRateLimit();
+        // Validate audio data before processing
+        this.validateAudioData(audioData);
         
-        const result = await this.performTranscription(audioData, options);
+        // Queue the request to prevent concurrent API calls
+        const result = await this.queueRequest(() => this.performTranscription(audioData, options));
         
-        // Success - reset any retry state if needed
+        // Success - reset error tracking
+        this.consecutiveErrors = 0;
+        this.connectionHealthy = true;
+        
         return result;
         
       } catch (error: any) {
+        this.consecutiveErrors++;
+        this.lastErrorTime = Date.now();
+        
         lastError = error instanceof STTError ? error : new STTError(`Transcription failed: ${error.message}`, 'TRANSCRIPTION_ERROR');
         
         console.log(`Transcription attempt ${attempt + 1} failed:`, lastError.message);
+        console.log(`Consecutive errors: ${this.consecutiveErrors}`);
+        
+        // Mark connection as unhealthy after multiple consecutive errors
+        if (this.consecutiveErrors >= 3) {
+          this.connectionHealthy = false;
+        }
         
         // Don't retry non-retryable errors
         if (!lastError.retryable || attempt >= maxRetries) {
           break;
         }
         
-        // Exponential backoff: wait before retrying
-        const delay = Math.min(1000 * Math.pow(2, attempt), 10000); // Max 10 seconds
+        // Enhanced backoff strategy based on error type and consecutive failures
+        const delay = this.calculateRetryDelay(attempt, lastError, this.consecutiveErrors);
         console.log(`Retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Reset client if connection appears unhealthy
+        if (!this.connectionHealthy && this.config.apiKey) {
+          console.log('Resetting client due to connection issues');
+          await this.resetConnection();
+        }
       }
     }
     
@@ -125,13 +149,128 @@ export class GeminiProvider implements STTProvider {
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
     
-    if (timeSinceLastRequest < this.minRequestInterval) {
-      const delay = this.minRequestInterval - timeSinceLastRequest;
-      console.log(`Rate limiting: waiting ${delay}ms`);
+    // Dynamic rate limiting based on connection health
+    let effectiveInterval = this.minRequestInterval;
+    if (!this.connectionHealthy) {
+      effectiveInterval = Math.min(this.minRequestInterval * 2, 2000); // Up to 2 seconds if unhealthy
+    }
+    
+    // Additional delay if we've had recent errors
+    if (this.consecutiveErrors > 0 && (now - this.lastErrorTime) < 5000) {
+      effectiveInterval += this.consecutiveErrors * 200; // Add 200ms per consecutive error
+    }
+    
+    if (timeSinceLastRequest < effectiveInterval) {
+      const delay = effectiveInterval - timeSinceLastRequest;
+      console.log(`Rate limiting: waiting ${delay}ms (health: ${this.connectionHealthy}, errors: ${this.consecutiveErrors})`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
     
     this.lastRequestTime = Date.now();
+  }
+  
+  private validateAudioData(audioData: AudioChunk): void {
+    if (!audioData || !audioData.data) {
+      throw new STTError('Invalid audio data: missing data buffer', 'INVALID_AUDIO_DATA');
+    }
+    
+    if (audioData.data.byteLength === 0) {
+      throw new STTError('Invalid audio data: empty data buffer', 'EMPTY_AUDIO_DATA');
+    }
+    
+    if (!audioData.format || audioData.format.trim() === '') {
+      throw new STTError('Invalid audio data: missing or empty format', 'MISSING_AUDIO_FORMAT');
+    }
+    
+    if (audioData.duration <= 0) {
+      throw new STTError('Invalid audio data: invalid duration', 'INVALID_AUDIO_DURATION');
+    }
+    
+    console.log(`Audio data validation passed: ${audioData.data.byteLength} bytes, ${audioData.duration}s, format: ${audioData.format}`);
+  }
+  
+  private async queueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push(async () => {
+        try {
+          await this.enforceRateLimit();
+          const result = await requestFn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      
+      this.processQueue();
+    });
+  }
+  
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessingQueue = true;
+    
+    try {
+      while (this.requestQueue.length > 0) {
+        const request = this.requestQueue.shift();
+        if (request) {
+          await request();
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+  
+  private calculateRetryDelay(attempt: number, error: STTError, consecutiveErrors: number): number {
+    // Base exponential backoff
+    let delay = Math.min(500 * Math.pow(2, attempt), 10000); // 500ms, 1s, 2s, 4s, max 10s
+    
+    // Adjust based on error type
+    if (error.code === 'RATE_LIMIT') {
+      // More aggressive backoff for rate limits
+      delay = Math.min(2000 * Math.pow(2, attempt), 30000); // Up to 30 seconds
+    } else if (error.code === 'SERVER_ERROR') {
+      // Moderate backoff for server errors
+      delay = Math.min(1000 * Math.pow(1.5, attempt), 15000); // Up to 15 seconds
+    }
+    
+    // Additional penalty for consecutive errors
+    if (consecutiveErrors > 1) {
+      delay += (consecutiveErrors - 1) * 500; // Add 500ms per additional consecutive error
+    }
+    
+    return Math.floor(delay);
+  }
+  
+  private async resetConnection(): Promise<void> {
+    console.log('Resetting Gemini API connection...');
+    
+    if (!this.config.apiKey) {
+      throw new STTError('API key is required for connection reset', 'MISSING_API_KEY');
+    }
+    
+    try {
+      // Clear the old client
+      this.client = null;
+      
+      // Create a new client instance
+      this.client = new GoogleGenerativeAI(this.config.apiKey);
+      
+      // Test the new connection
+      await this.validateApiKey();
+      
+      console.log('Connection reset successful');
+      this.connectionHealthy = true;
+      this.consecutiveErrors = 0;
+      
+    } catch (error: any) {
+      console.error('Failed to reset connection:', error);
+      this.connectionHealthy = false;
+      throw new STTError(`Failed to reset connection: ${error.message}`, 'CONNECTION_RESET_FAILED');
+    }
   }
 
   private async performTranscription(audioData: AudioChunk, options: TranscriptionOptions): Promise<TranscriptionResult> {
@@ -444,7 +583,19 @@ export class GeminiProvider implements STTProvider {
   }
 
   async cleanup(): Promise<void> {
+    // Clear the request queue
+    this.requestQueue = [];
+    this.isProcessingQueue = false;
+    
+    // Reset error tracking
+    this.consecutiveErrors = 0;
+    this.connectionHealthy = true;
+    this.lastErrorTime = 0;
+    
+    // Clear client
     this.client = null;
+    
+    // Reset usage metrics
     this.usageMetrics = {
       requestCount: 0,
       tokensUsed: 0,

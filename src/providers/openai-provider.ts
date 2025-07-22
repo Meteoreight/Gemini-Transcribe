@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { 
   STTProvider, 
   ProviderCapabilities, 
@@ -90,10 +90,28 @@ export class OpenAIProvider implements STTProvider {
         );
       }
 
-      // Create a File-like object from the audio data
-      const audioFile = new File([audioData.data], `audio.${audioData.format || 'wav'}`, {
-        type: this.getMimeType(audioData.format)
-      });
+      // Validate audio format
+      const format = audioData.format?.toLowerCase() || 'wav';
+      if (!this.capabilities.supportedFormats.includes(format)) {
+        throw new STTError(
+          `Audio format '${format}' is not supported. Supported formats: ${this.capabilities.supportedFormats.join(', ')}`,
+          'UNSUPPORTED_FORMAT'
+        );
+      }
+
+      // Validate audio data
+      if (!audioData.data || audioData.data.byteLength === 0) {
+        throw new STTError('Audio data is empty or invalid', 'INVALID_AUDIO_DATA');
+      }
+
+      // Create a File-like object from the audio data using OpenAI's toFile utility
+      const audioFile = await toFile(
+        new Uint8Array(audioData.data), 
+        `audio.${audioData.format || 'wav'}`,
+        { 
+          type: this.getMimeType(audioData.format || 'wav')
+        }
+      );
 
       // Build transcription parameters
       const transcriptionParams: OpenAI.Audio.TranscriptionCreateParams = {
@@ -117,6 +135,19 @@ export class OpenAIProvider implements STTProvider {
       if (options.includeTimestamps && transcriptionParams.response_format && ['verbose_json', 'srt', 'vtt'].includes(transcriptionParams.response_format)) {
         (transcriptionParams as any).timestamp_granularities = ['segment'];
       }
+
+      // Log request details for debugging
+      console.log('OpenAI transcription request details:', {
+        model: transcriptionParams.model,
+        fileSize: audioData.data.byteLength,
+        format: audioData.format,
+        mimeType: this.getMimeType(audioData.format || 'wav'),
+        duration: audioData.duration,
+        responseFormat: transcriptionParams.response_format,
+        temperature: transcriptionParams.temperature,
+        hasPrompt: !!transcriptionParams.prompt,
+        hasLanguage: !!transcriptionParams.language
+      });
 
       // Make the API request
       const response = await this.client.audio.transcriptions.create(transcriptionParams);
@@ -147,22 +178,32 @@ export class OpenAIProvider implements STTProvider {
       
       // Handle OpenAI API specific errors
       if (error?.status) {
+        console.error('OpenAI API Error Details:', {
+          status: error.status,
+          code: error.code,
+          type: error.type,
+          message: error.message,
+          param: error.param,
+          error: error.error
+        });
+
         switch (error.status) {
           case 400:
-            throw new STTError('Invalid request format or file', 'INVALID_REQUEST');
+            const detailedMessage = error?.error?.message || error?.message || 'Invalid request format or file';
+            throw new STTError(`Invalid request: ${detailedMessage}`, 'INVALID_REQUEST');
           case 401:
-            throw new STTError('Authentication failed', 'AUTH_ERROR');
+            throw new STTError('Authentication failed - check API key', 'AUTH_ERROR');
           case 413:
-            throw new STTError('File too large', 'AUDIO_TOO_LARGE');
+            throw new STTError('File too large - maximum 25MB supported', 'AUDIO_TOO_LARGE');
           case 429:
-            throw new STTError('Rate limit exceeded', 'RATE_LIMIT', true);
+            throw new STTError('Rate limit exceeded - please try again later', 'RATE_LIMIT', true);
           case 500:
           case 502:
           case 503:
           case 504:
-            throw new STTError('Server error', 'SERVER_ERROR', true);
+            throw new STTError(`Server error (${error.status}) - please try again`, 'SERVER_ERROR', true);
           default:
-            throw new STTError(`API error: ${error?.message || 'Unknown error'}`, 'API_ERROR');
+            throw new STTError(`API error (${error.status}): ${error?.message || 'Unknown error'}`, 'API_ERROR');
         }
       }
       
@@ -287,6 +328,10 @@ export class OpenAIProvider implements STTProvider {
   }
 
   private getMimeType(format: string): string {
+    if (!format || format.trim() === '') {
+      return 'audio/wav';
+    }
+    
     const mimeTypes: Record<string, string> = {
       'mp3': 'audio/mpeg',
       'mp4': 'audio/mp4',
@@ -296,7 +341,20 @@ export class OpenAIProvider implements STTProvider {
       'wav': 'audio/wav',
       'webm': 'audio/webm'
     };
-    return mimeTypes[format.toLowerCase()] || 'audio/wav';
+    
+    const lowerFormat = format.toLowerCase().trim();
+    
+    // Handle WebM with specific codecs
+    if (lowerFormat.includes('webm')) {
+      return 'audio/webm';
+    }
+    
+    // Handle audio/webm MIME type passed from MediaRecorder
+    if (lowerFormat.startsWith('audio/')) {
+      return lowerFormat;
+    }
+    
+    return mimeTypes[lowerFormat] || 'audio/wav';
   }
 
   private updateUsageMetrics(processingTime: number, audioDuration: number): void {
