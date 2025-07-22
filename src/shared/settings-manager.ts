@@ -3,9 +3,23 @@ import { AppSettings, ProviderType, GeminiConfig, OpenAIConfig, LocalWhisperConf
 export class SettingsManager {
   private static readonly STORAGE_KEY = 'transcribe-settings';
   private settings: AppSettings;
+  private envVars: Record<string, string> = {};
 
   constructor() {
     this.settings = this.getDefaultSettings();
+    this.loadEnvironmentVariables();
+  }
+
+  private async loadEnvironmentVariables(): Promise<void> {
+    try {
+      // Try to get environment variables from Electron API if available
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        this.envVars = await (window as any).electronAPI.getAllEnvVars();
+        console.log('Loaded environment variables:', Object.keys(this.envVars));
+      }
+    } catch (error) {
+      console.warn('Failed to load environment variables:', error);
+    }
   }
 
   private getDefaultSettings(): AppSettings {
@@ -60,6 +74,9 @@ export class SettingsManager {
 
   async loadSettings(): Promise<void> {
     try {
+      // First load environment variables
+      await this.loadEnvironmentVariables();
+      
       // Load from localStorage (for renderer process)
       if (typeof localStorage !== 'undefined') {
         const saved = localStorage.getItem(SettingsManager.STORAGE_KEY);
@@ -143,7 +160,36 @@ export class SettingsManager {
   }
 
   getProviderConfig(provider: ProviderType): GeminiConfig | OpenAIConfig | LocalWhisperConfig {
-    return this.settings.providers[provider];
+    const config = { ...this.settings.providers[provider] };
+    
+    // Merge environment variables as fallback values
+    switch (provider) {
+      case ProviderType.GEMINI:
+        const geminiConfig = config as GeminiConfig;
+        if (!geminiConfig.apiKey && this.envVars['GEMINI_API_KEY']) {
+          geminiConfig.apiKey = this.envVars['GEMINI_API_KEY'];
+        }
+        if (!geminiConfig.model && this.envVars['GEMINI_MODEL']) {
+          geminiConfig.model = this.envVars['GEMINI_MODEL'];
+        }
+        break;
+        
+      case ProviderType.OPENAI:
+        const openaiConfig = config as OpenAIConfig;
+        if (!openaiConfig.apiKey && this.envVars['OPENAI_API_KEY']) {
+          openaiConfig.apiKey = this.envVars['OPENAI_API_KEY'];
+        }
+        if (!openaiConfig.model && this.envVars['OPENAI_MODEL']) {
+          openaiConfig.model = this.envVars['OPENAI_MODEL'];
+        }
+        break;
+        
+      case ProviderType.LOCAL_WHISPER:
+        // Local whisper doesn't need API keys from environment
+        break;
+    }
+    
+    return config;
   }
 
   updateProviderConfig(provider: ProviderType, config: any): void {
@@ -151,7 +197,7 @@ export class SettingsManager {
   }
 
   isProviderConfigured(provider: ProviderType): boolean {
-    const config = this.settings.providers[provider];
+    const config = this.getProviderConfig(provider); // This now includes env vars
     
     switch (provider) {
       case ProviderType.GEMINI:

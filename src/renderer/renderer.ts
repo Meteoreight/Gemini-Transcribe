@@ -30,33 +30,69 @@ class TranscribeRenderer {
   }
 
   private async initializeApp(): Promise<void> {
-    // Initialize provider factory
-    STTProviderFactory.initialize();
-    
-    // Load settings
-    await this.settingsManager.loadSettings();
-    
-    // Initialize current provider
-    await this.initializeCurrentProvider();
-    
-    this.setupEventListeners();
-    this.setupTabNavigation();
-    this.setupFileHandling();
-    this.setupAudioDevices();
-    this.updateUI();
-    
-    // Listen for IPC events
-    this.setupIPC();
+    try {
+      console.log('Starting app initialization...');
+      
+      // Initialize provider factory
+      console.log('Initializing provider factory...');
+      STTProviderFactory.initialize();
+      
+      // Load settings
+      console.log('Loading settings...');
+      await this.settingsManager.loadSettings();
+      
+      // Initialize current provider
+      console.log('Initializing current provider...');
+      await this.initializeCurrentProvider();
+      
+      console.log('Setting up event listeners...');
+      this.setupEventListeners();
+      this.setupTabNavigation();
+      this.setupFileHandling();
+      this.setupAudioDevices();
+      this.updateUI();
+      
+      // Listen for IPC events
+      console.log('Setting up IPC...');
+      this.setupIPC();
+      
+      console.log('App initialization completed successfully!');
+    } catch (error: any) {
+      console.error('Failed to initialize app:', error);
+      alert('Application initialization failed. Please check the console for details.');
+    }
+  }
+
+  private validateProviderState(): { isValid: boolean; error?: string } {
+    if (!this.state.currentProvider) {
+      return { 
+        isValid: false, 
+        error: 'No STT provider is configured. Please select and configure a provider in settings.' 
+      };
+    }
+
+    if (!this.state.currentProvider.isConfigured()) {
+      return { 
+        isValid: false, 
+        error: `${this.state.currentProvider.name} is not properly configured. Please check your API key and settings.` 
+      };
+    }
+
+    return { isValid: true };
   }
 
   private async initializeCurrentProvider(): Promise<void> {
     try {
       const currentProviderType = this.settingsManager.getCurrentProvider();
+      console.log(`Current provider type: ${currentProviderType}`);
+      
       const providerConfig = this.settingsManager.getProviderConfig(currentProviderType);
+      console.log(`Provider config:`, providerConfig);
+      
+      console.log(`Creating provider: ${currentProviderType}`);
+      this.state.currentProvider = await STTProviderFactory.createProvider(currentProviderType, providerConfig);
       
       console.log(`Initializing provider: ${currentProviderType}`);
-      
-      this.state.currentProvider = await STTProviderFactory.createProvider(currentProviderType, providerConfig);
       await this.state.currentProvider.initialize(providerConfig);
       
       console.log(`Provider ${currentProviderType} initialized successfully`);
@@ -64,67 +100,148 @@ class TranscribeRenderer {
       
     } catch (error: any) {
       console.error('Failed to initialize provider:', error);
+      console.error('Error details:', error.stack);
+      
+      // Reset currentProvider to null when initialization fails
+      this.state.currentProvider = null;
+      
+      // Don't throw the error, just log it and continue with app initialization
       this.updateStatus(`Provider initialization failed: ${error.message}`);
+      this.updateProviderStatus();
+      console.log('Continuing app initialization without provider...');
     }
   }
 
   private setupEventListeners(): void {
-    // Tab navigation
-    document.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      
-      if (target.classList.contains('tab-btn')) {
-        const tabName = target.getAttribute('data-tab');
-        if (tabName) {
-          this.switchTab(tabName);
-        }
-      }
-    });
-
-    // Real-time recording
-    const realtimeStartBtn = document.getElementById('realtime-start-btn');
-    realtimeStartBtn?.addEventListener('click', () => this.toggleRealtimeRecording());
-
-    // File processing
-    const processFilesBtn = document.getElementById('process-files-btn');
-    processFilesBtn?.addEventListener('click', () => this.processSelectedFiles());
-
-    // Speech recording
-    const speechStartBtn = document.getElementById('speech-start-btn');
-    speechStartBtn?.addEventListener('click', () => this.toggleSpeechRecording());
-
-    // Settings
-    const saveSettingsBtn = document.getElementById('save-settings');
-    saveSettingsBtn?.addEventListener('click', () => this.saveSettings());
-
-    const resetSettingsBtn = document.getElementById('reset-settings');
-    resetSettingsBtn?.addEventListener('click', () => this.resetSettings());
-
-    // Transcription controls
-    const clearBtn = document.getElementById('clear-transcription');
-    clearBtn?.addEventListener('click', () => this.clearTranscription('transcription-area'));
-
-    const copyBtn = document.getElementById('copy-transcription');
-    copyBtn?.addEventListener('click', () => this.copyTranscription('transcription-area'));
-
-    // Provider selection
-    const providerSelect = document.getElementById('stt-provider');
-    providerSelect?.addEventListener('change', (e) => this.onProviderChange(e));
-
-    // API key toggles
-    const toggleGeminiApiKeyBtn = document.getElementById('toggle-gemini-api-key');
-    toggleGeminiApiKeyBtn?.addEventListener('click', () => this.toggleApiKeyVisibility('gemini'));
+    console.log('Setting up event listeners...');
     
-    const toggleOpenAIApiKeyBtn = document.getElementById('toggle-openai-api-key');
-    toggleOpenAIApiKeyBtn?.addEventListener('click', () => this.toggleApiKeyVisibility('openai'));
+    try {
+      // Tab navigation
+      console.log('Setting up tab navigation click listener...');
+      document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        
+        if (target.classList.contains('tab-btn')) {
+          const tabName = target.getAttribute('data-tab');
+          console.log(`Tab clicked: ${tabName}`);
+          if (tabName) {
+            this.switchTab(tabName);
+          }
+        }
+      });
 
-    // Browse output directory
-    const browseOutputDirBtn = document.getElementById('browse-output-dir');
-    browseOutputDirBtn?.addEventListener('click', () => this.browseOutputDirectory());
+      // Real-time recording
+      const realtimeStartBtn = document.getElementById('realtime-start-btn');
+      if (realtimeStartBtn) {
+        console.log('Found realtime start button, adding listener...');
+        realtimeStartBtn.addEventListener('click', () => {
+          console.log('Realtime start button clicked');
+          this.toggleRealtimeRecording();
+        });
+      } else {
+        console.warn('Realtime start button not found');
+      }
 
-    // Test microphone
-    const testMicBtn = document.getElementById('test-microphone');
-    testMicBtn?.addEventListener('click', () => this.testMicrophone());
+      // File processing
+      const processFilesBtn = document.getElementById('process-files-btn');
+      if (processFilesBtn) {
+        console.log('Found process files button, adding listener...');
+        processFilesBtn.addEventListener('click', () => this.processSelectedFiles());
+      } else {
+        console.warn('Process files button not found');
+      }
+
+      // Speech recording
+      const speechStartBtn = document.getElementById('speech-start-btn');
+      if (speechStartBtn) {
+        console.log('Found speech start button, adding listener...');
+        speechStartBtn.addEventListener('click', () => this.toggleSpeechRecording());
+      } else {
+        console.warn('Speech start button not found');
+      }
+
+      // Settings
+      const saveSettingsBtn = document.getElementById('save-settings');
+      if (saveSettingsBtn) {
+        console.log('Found save settings button, adding listener...');
+        saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+      } else {
+        console.warn('Save settings button not found');
+      }
+
+      const resetSettingsBtn = document.getElementById('reset-settings');
+      if (resetSettingsBtn) {
+        console.log('Found reset settings button, adding listener...');
+        resetSettingsBtn.addEventListener('click', () => this.resetSettings());
+      } else {
+        console.warn('Reset settings button not found');
+      }
+
+      // Transcription controls
+      const clearBtn = document.getElementById('clear-transcription');
+      if (clearBtn) {
+        console.log('Found clear transcription button, adding listener...');
+        clearBtn.addEventListener('click', () => this.clearTranscription('transcription-area'));
+      } else {
+        console.warn('Clear transcription button not found');
+      }
+
+      const copyBtn = document.getElementById('copy-transcription');
+      if (copyBtn) {
+        console.log('Found copy transcription button, adding listener...');
+        copyBtn.addEventListener('click', () => this.copyTranscription('transcription-area'));
+      } else {
+        console.warn('Copy transcription button not found');
+      }
+
+      // Provider selection
+      const providerSelect = document.getElementById('stt-provider');
+      if (providerSelect) {
+        console.log('Found provider select, adding listener...');
+        providerSelect.addEventListener('change', (e) => this.onProviderChange(e));
+      } else {
+        console.warn('Provider select not found');
+      }
+
+      // API key toggles
+      const toggleGeminiApiKeyBtn = document.getElementById('toggle-gemini-api-key');
+      if (toggleGeminiApiKeyBtn) {
+        console.log('Found gemini API key toggle, adding listener...');
+        toggleGeminiApiKeyBtn.addEventListener('click', () => this.toggleApiKeyVisibility('gemini'));
+      } else {
+        console.warn('Gemini API key toggle not found');
+      }
+      
+      const toggleOpenAIApiKeyBtn = document.getElementById('toggle-openai-api-key');
+      if (toggleOpenAIApiKeyBtn) {
+        console.log('Found OpenAI API key toggle, adding listener...');
+        toggleOpenAIApiKeyBtn.addEventListener('click', () => this.toggleApiKeyVisibility('openai'));
+      } else {
+        console.warn('OpenAI API key toggle not found');
+      }
+
+      // Browse output directory
+      const browseOutputDirBtn = document.getElementById('browse-output-dir');
+      if (browseOutputDirBtn) {
+        console.log('Found browse output dir button, adding listener...');
+        browseOutputDirBtn.addEventListener('click', () => this.browseOutputDirectory());
+      } else {
+        console.warn('Browse output dir button not found');
+      }
+
+      // Test microphone
+      const testMicBtn = document.getElementById('test-microphone');
+      if (testMicBtn) {
+        console.log('Found test microphone button, adding listener...');
+        testMicBtn.addEventListener('click', () => this.testMicrophone());
+      } else {
+        console.warn('Test microphone button not found');
+      }
+      
+      console.log('Event listeners setup completed');
+    } catch (error: any) {
+      console.error('Error setting up event listeners:', error);
+    }
   }
 
   private setupIPC(): void {
@@ -153,23 +270,41 @@ class TranscribeRenderer {
   }
 
   private switchTab(tabName: string): void {
-    this.state.currentTab = tabName;
+    console.log(`Switching to tab: ${tabName}`);
+    
+    try {
+      this.state.currentTab = tabName;
 
-    // Update tab buttons
-    document.querySelectorAll('.tab-btn').forEach((btn) => {
-      btn.classList.remove('active');
-      if (btn.getAttribute('data-tab') === tabName) {
-        btn.classList.add('active');
+      // Update tab buttons
+      const tabButtons = document.querySelectorAll('.tab-btn');
+      console.log(`Found ${tabButtons.length} tab buttons`);
+      
+      tabButtons.forEach((btn) => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-tab') === tabName) {
+          btn.classList.add('active');
+          console.log(`Activated tab button for: ${tabName}`);
+        }
+      });
+
+      // Update tab content
+      const tabContents = document.querySelectorAll('.tab-content');
+      console.log(`Found ${tabContents.length} tab contents`);
+      
+      tabContents.forEach((content) => {
+        content.classList.remove('active');
+      });
+
+      const activeTab = document.getElementById(`${tabName}-tab`);
+      if (activeTab) {
+        activeTab.classList.add('active');
+        console.log(`Activated tab content for: ${tabName}`);
+      } else {
+        console.warn(`Tab content not found for: ${tabName}-tab`);
       }
-    });
-
-    // Update tab content
-    document.querySelectorAll('.tab-content').forEach((content) => {
-      content.classList.remove('active');
-    });
-
-    const activeTab = document.getElementById(`${tabName}-tab`);
-    activeTab?.classList.add('active');
+    } catch (error: any) {
+      console.error('Error switching tab:', error);
+    }
   }
 
   private setupFileHandling(): void {
@@ -288,23 +423,91 @@ class TranscribeRenderer {
 
   private async startRealtimeRecording(): Promise<void> {
     try {
-      // Request desktop audio capture permission
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        audio: true,
-        video: false
+      // Validate provider state before starting recording
+      const validation = this.validateProviderState();
+      if (!validation.isValid) {
+        alert(validation.error);
+        return;
+      }
+
+      this.updateStatus('Getting desktop audio sources...');
+
+      // Get available desktop sources using Electron's desktop capturer
+      const sources = await window.electronAPI.getDesktopSources({ 
+        types: ['screen', 'audio'] 
       });
 
-      this.mediaRecorder = new MediaRecorder(stream);
+      // Find suitable audio source
+      let audioSource = sources.find(source => 
+        source.name.toLowerCase().includes('audio') || 
+        source.name.toLowerCase().includes('system') ||
+        source.name.toLowerCase().includes('desktop')
+      );
+
+      // If no specific audio source found, try to use screen capture with audio
+      if (!audioSource) {
+        audioSource = sources.find(source => source.name.toLowerCase().includes('screen'));
+      }
+
+      if (!audioSource) {
+        // Fallback to microphone recording
+        console.warn('No desktop audio source found, falling back to microphone');
+        this.updateStatus('No desktop audio available, using microphone...');
+        await this.startSpeechRecording();
+        return;
+      }
+
+      // Try to get the media stream using the source ID
+      let stream: MediaStream;
+      try {
+        // Use Electron's enhanced getUserMedia with chromeMediaSourceId
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: audioSource.id
+          } as any,
+          video: false
+        });
+      } catch (getUserMediaError) {
+        console.warn('Failed to get stream with source ID, trying getDisplayMedia:', getUserMediaError);
+        
+        // Fallback to standard getDisplayMedia (this might still fail, but worth trying)
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            audio: true,
+            video: false
+          });
+        } catch (displayMediaError) {
+          console.error('Both desktop capture methods failed:', displayMediaError);
+          this.updateStatus('Desktop audio not supported, using microphone...');
+          await this.startSpeechRecording();
+          return;
+        }
+      }
+
+      // Configure MediaRecorder with better audio format
+      const mimeType = this.getBestAudioMimeType();
+      this.mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        audioBitsPerSecond: 128000 // 128 kbps for good quality
+      });
+      
+      console.log(`Using MediaRecorder with MIME type: ${mimeType}`);
       this.recordingStartTime = Date.now();
       this.state.isRecording = true;
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
+          console.log(`Audio chunk received: ${event.data.size} bytes, type: ${event.data.type}`);
           this.processAudioChunk(event.data);
+        } else {
+          console.warn('Received empty audio chunk');
         }
       };
 
-      this.mediaRecorder.start(this.settingsManager.getChunkDuration() * 1000);
+      // Use longer chunks to ensure meaningful audio content
+      const chunkDuration = Math.max(this.settingsManager.getChunkDuration() * 1000, 3000); // minimum 3 seconds
+      this.mediaRecorder.start(chunkDuration);
       this.startDurationTimer();
       this.updateRecordingUI(true);
       this.updateStatus('Recording desktop audio...');
@@ -312,7 +515,20 @@ class TranscribeRenderer {
     } catch (error: any) {
       console.error('Error starting recording:', error);
       this.updateStatus('Failed to start recording');
-      alert('Failed to start desktop audio recording. Please ensure you have granted screen recording permissions.');
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to start desktop audio recording.';
+      if (error.name === 'NotSupportedError') {
+        errorMessage += ' Desktop audio capture is not supported on this system. Try using microphone recording instead.';
+      } else if (error.name === 'NotAllowedError') {
+        errorMessage += ' Please grant screen recording permissions in your system settings.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage += ' No audio sources found. Try using microphone recording instead.';
+      } else {
+        errorMessage += ` Error: ${error.message}`;
+      }
+      
+      alert(errorMessage);
     }
   }
 
@@ -326,6 +542,13 @@ class TranscribeRenderer {
 
   private async startSpeechRecording(): Promise<void> {
     try {
+      // Validate provider state before starting recording
+      const validation = this.validateProviderState();
+      if (!validation.isValid) {
+        alert(validation.error);
+        return;
+      }
+
       const microphoneSelect = document.getElementById('microphone-select') as HTMLSelectElement;
       const deviceId = microphoneSelect?.value || 'default';
 
@@ -338,17 +561,29 @@ class TranscribeRenderer {
         }
       });
 
-      this.mediaRecorder = new MediaRecorder(stream);
+      // Configure MediaRecorder with better audio format
+      const mimeType = this.getBestAudioMimeType();
+      this.mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        audioBitsPerSecond: 128000 // 128 kbps for good quality
+      });
+      
+      console.log(`Using MediaRecorder with MIME type: ${mimeType}`);
       this.recordingStartTime = Date.now();
       this.state.isRecording = true;
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
+          console.log(`Audio chunk received: ${event.data.size} bytes, type: ${event.data.type}`);
           this.processAudioChunk(event.data);
+        } else {
+          console.warn('Received empty audio chunk');
         }
       };
 
-      this.mediaRecorder.start(this.settingsManager.getChunkDuration() * 1000);
+      // Use longer chunks to ensure meaningful audio content
+      const chunkDuration = Math.max(this.settingsManager.getChunkDuration() * 1000, 3000); // minimum 3 seconds
+      this.mediaRecorder.start(chunkDuration);
       this.startDurationTimer();
       this.updateRecordingUI(true);
       this.updateStatus('Recording from microphone...');
@@ -435,8 +670,20 @@ class TranscribeRenderer {
 
   private async processAudioChunk(audioBlob: Blob): Promise<void> {
     try {
+      // Validate audio blob
+      if (!this.isValidAudioBlob(audioBlob)) {
+        console.warn('Skipping invalid or empty audio chunk');
+        return;
+      }
+
       // Convert blob to ArrayBuffer
       const arrayBuffer = await audioBlob.arrayBuffer();
+
+      // Additional validation for audio content
+      if (!this.hasAudioContent(arrayBuffer)) {
+        console.warn('Skipping audio chunk with no meaningful content');
+        return;
+      }
 
       // Get current settings
       const inputLanguage = (document.getElementById('input-language') as HTMLSelectElement)?.value || 'auto';
@@ -457,28 +704,54 @@ class TranscribeRenderer {
 
     } catch (error: any) {
       console.error('Error processing audio chunk:', error);
-      this.updateStatus(`Transcription error: ${error.message}`);
+      
+      // Provide user-friendly error messages
+      let userMessage = 'Transcription failed';
+      if (error.message.includes('No STT provider is configured')) {
+        userMessage = 'Please configure an STT provider in settings';
+      } else if (error.message.includes('not properly configured')) {
+        userMessage = 'Provider configuration incomplete - check API key';
+      } else if (error.message.includes('Authentication failed') || error.message.includes('Invalid API key')) {
+        userMessage = 'Invalid API key - please check your credentials';
+      } else if (error.message.includes('Rate limit exceeded')) {
+        userMessage = 'API rate limit exceeded - please wait and try again';
+      } else if (error.message.includes('Network') || error.message.includes('timeout')) {
+        userMessage = 'Network error - check your internet connection';
+      } else if (error.message.includes('No text in response') || error.message.includes('NO_TEXT')) {
+        userMessage = 'No speech detected in audio - try speaking louder or closer to microphone';
+      } else if (error.message.includes('silent or empty')) {
+        userMessage = 'Audio appears to be silent - check microphone or audio source';
+      } else if (error.message.includes('Content blocked') || error.message.includes('CONTENT_BLOCKED')) {
+        userMessage = 'Audio content was blocked by safety filters';
+      } else if (error.message.includes('unsupported format')) {
+        userMessage = 'Audio format not supported - try adjusting recording settings';
+      } else {
+        userMessage = `Transcription error: ${error.message}`;
+      }
+      
+      this.updateStatus(userMessage);
     }
   }
 
   private async transcribeAudio(audioData: ArrayBuffer, options: TranscriptionOptions): Promise<{text: string}> {
-    if (!this.state.currentProvider) {
-      throw new Error('No STT provider is configured');
+    const validation = this.validateProviderState();
+    if (!validation.isValid) {
+      throw new Error(validation.error!);
     }
 
     try {
-      // Create audio chunk
+      // Create audio chunk with correct format detection
       const audioChunk: AudioChunk = {
         data: audioData,
         duration: this.estimateAudioDuration(audioData),
         timestamp: Date.now(),
-        format: 'wav', // Assuming WAV format from MediaRecorder
+        format: this.detectAudioFormat(), // Detect actual format from MediaRecorder
         sampleRate: 16000, // Standard sample rate
         channels: 1 // Mono
       };
 
       // Perform transcription
-      const result = await this.state.currentProvider.transcribe(audioChunk, options);
+      const result = await this.state.currentProvider!.transcribe(audioChunk, options);
       
       return {
         text: result.text
@@ -689,12 +962,15 @@ class TranscribeRenderer {
 
   private updateProviderStatus(): void {
     const connectionStatus = document.getElementById('connection-status');
-    if (connectionStatus && this.state.currentProvider) {
-      if (this.state.currentProvider.isConfigured()) {
+    if (connectionStatus) {
+      if (!this.state.currentProvider) {
+        connectionStatus.textContent = 'No provider available - Check settings';
+        connectionStatus.style.color = '#F44336';
+      } else if (this.state.currentProvider.isConfigured()) {
         connectionStatus.textContent = `Connected (${this.state.currentProvider.name})`;
         connectionStatus.style.color = '#4CAF50';
       } else {
-        connectionStatus.textContent = `${this.state.currentProvider.name} - Not Configured`;
+        connectionStatus.textContent = `${this.state.currentProvider.name} - Configuration Required`;
         connectionStatus.style.color = '#FF9800';
       }
     }
@@ -836,29 +1112,80 @@ class TranscribeRenderer {
     const settings = this.settingsManager.getSettings();
     
     // Update provider selector
-    (document.getElementById('stt-provider') as HTMLSelectElement).value = settings.currentProvider;
+    const providerSelect = document.getElementById('stt-provider') as HTMLSelectElement;
+    if (providerSelect) {
+      providerSelect.value = settings.currentProvider;
+    }
     
     // Update provider-specific settings
     // Gemini settings
-    (document.getElementById('gemini-api-key') as HTMLInputElement).value = (settings.providers.gemini as any).apiKey || '';
-    (document.getElementById('gemini-model') as HTMLSelectElement).value = (settings.providers.gemini as any).model || 'gemini-2.5-flash';
+    const geminiApiKey = document.getElementById('gemini-api-key') as HTMLInputElement;
+    if (geminiApiKey) {
+      geminiApiKey.value = (settings.providers.gemini as any).apiKey || '';
+    }
+    
+    const geminiModel = document.getElementById('gemini-model') as HTMLSelectElement;
+    if (geminiModel) {
+      geminiModel.value = (settings.providers.gemini as any).model || 'gemini-2.5-flash';
+    }
     
     // OpenAI settings
-    (document.getElementById('openai-api-key') as HTMLInputElement).value = (settings.providers.openai as any).apiKey || '';
-    (document.getElementById('openai-model') as HTMLSelectElement).value = (settings.providers.openai as any).model || 'whisper-1';
-    (document.getElementById('openai-response-format') as HTMLSelectElement).value = (settings.providers.openai as any).responseFormat || 'json';
+    const openaiApiKey = document.getElementById('openai-api-key') as HTMLInputElement;
+    if (openaiApiKey) {
+      openaiApiKey.value = (settings.providers.openai as any).apiKey || '';
+    }
+    
+    const openaiModel = document.getElementById('openai-model') as HTMLSelectElement;
+    if (openaiModel) {
+      openaiModel.value = (settings.providers.openai as any).model || 'whisper-1';
+    }
+    
+    const openaiResponseFormat = document.getElementById('openai-response-format') as HTMLSelectElement;
+    if (openaiResponseFormat) {
+      openaiResponseFormat.value = (settings.providers.openai as any).responseFormat || 'json';
+    }
     
     // Local Whisper settings
-    (document.getElementById('whisper-model-size') as HTMLSelectElement).value = (settings.providers.local_whisper as any).modelSize || 'base';
-    (document.getElementById('whisper-device') as HTMLSelectElement).value = (settings.providers.local_whisper as any).device || 'cpu';
-    (document.getElementById('whisper-threads') as HTMLInputElement).value = (settings.providers.local_whisper as any).threads?.toString() || '4';
+    const whisperModelSize = document.getElementById('whisper-model-size') as HTMLSelectElement;
+    if (whisperModelSize) {
+      whisperModelSize.value = (settings.providers.local_whisper as any).modelSize || 'base';
+    }
+    
+    const whisperDevice = document.getElementById('whisper-device') as HTMLSelectElement;
+    if (whisperDevice) {
+      whisperDevice.value = (settings.providers.local_whisper as any).device || 'cpu';
+    }
+    
+    const whisperThreads = document.getElementById('whisper-threads') as HTMLInputElement;
+    if (whisperThreads) {
+      whisperThreads.value = (settings.providers.local_whisper as any).threads?.toString() || '4';
+    }
     
     // General settings
-    (document.getElementById('chunk-duration') as HTMLInputElement).value = settings.chunkDuration.toString();
-    (document.getElementById('output-directory') as HTMLInputElement).value = settings.outputDirectory;
-    (document.getElementById('output-format') as HTMLSelectElement).value = settings.outputFormat;
-    (document.getElementById('auto-save') as HTMLInputElement).checked = settings.autoSave;
-    (document.getElementById('include-timestamps') as HTMLInputElement).checked = settings.includeTimestamps;
+    const chunkDuration = document.getElementById('chunk-duration') as HTMLInputElement;
+    if (chunkDuration) {
+      chunkDuration.value = settings.chunkDuration.toString();
+    }
+    
+    const outputDirectory = document.getElementById('output-directory') as HTMLInputElement;
+    if (outputDirectory) {
+      outputDirectory.value = settings.outputDirectory;
+    }
+    
+    const outputFormat = document.getElementById('output-format') as HTMLSelectElement;
+    if (outputFormat) {
+      outputFormat.value = settings.outputFormat;
+    }
+    
+    const autoSave = document.getElementById('auto-save') as HTMLInputElement;
+    if (autoSave) {
+      autoSave.checked = settings.autoSave;
+    }
+    
+    const includeTimestamps = document.getElementById('include-timestamps') as HTMLInputElement;
+    if (includeTimestamps) {
+      includeTimestamps.checked = settings.includeTimestamps;
+    }
     
     // Show current provider settings
     this.updateProviderSettingsUI(settings.currentProvider);
@@ -912,6 +1239,94 @@ class TranscribeRenderer {
     if (bytes === 0) return '0 Bytes';
     const i = Math.floor(Math.log(bytes) / Math.log(1024));
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  private getBestAudioMimeType(): string {
+    // Try to use the best supported audio format for transcription
+    const preferredTypes = [
+      'audio/wav', // Best for transcription
+      'audio/webm;codecs=pcm', // WAV in WebM container
+      'audio/webm;codecs=opus', // Opus in WebM
+      'audio/mp4', // MP4 audio
+      'audio/webm', // Default WebM
+    ];
+
+    for (const type of preferredTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        console.log(`Selected audio MIME type: ${type}`);
+        return type;
+      }
+    }
+
+    // Fallback to default
+    console.warn('No preferred audio MIME types supported, using default');
+    return '';
+  }
+
+  private isValidAudioBlob(blob: Blob): boolean {
+    // Check basic blob validity
+    if (!blob || blob.size === 0) {
+      console.warn('Empty or null audio blob');
+      return false;
+    }
+
+    // Check minimum size (at least 1KB for meaningful audio)
+    if (blob.size < 1024) {
+      console.warn(`Audio blob too small: ${blob.size} bytes`);
+      return false;
+    }
+
+    // Check if blob type looks like audio
+    if (blob.type && !blob.type.startsWith('audio/')) {
+      console.warn(`Non-audio blob type: ${blob.type}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  private hasAudioContent(audioBuffer: ArrayBuffer): boolean {
+    // Check minimum buffer size
+    if (audioBuffer.byteLength < 1024) {
+      return false;
+    }
+
+    // Simple check for non-zero audio data
+    const view = new Uint8Array(audioBuffer);
+    let nonZeroCount = 0;
+    const sampleSize = Math.min(1000, view.length); // Check first 1000 bytes
+
+    for (let i = 0; i < sampleSize; i++) {
+      if (view[i] !== 0) {
+        nonZeroCount++;
+      }
+    }
+
+    // If more than 10% of sampled bytes are non-zero, likely contains audio
+    const nonZeroRatio = nonZeroCount / sampleSize;
+    const hasContent = nonZeroRatio > 0.1;
+    
+    if (!hasContent) {
+      console.warn(`Audio buffer appears to be silent or empty (${(nonZeroRatio * 100).toFixed(1)}% non-zero)`);
+    }
+
+    return hasContent;
+  }
+
+  private detectAudioFormat(): string {
+    // Return the MIME type that was actually used by MediaRecorder
+    if (this.mediaRecorder) {
+      const mimeType = this.mediaRecorder.mimeType;
+      console.log(`Detected MediaRecorder MIME type: ${mimeType}`);
+      
+      // Return the MIME type directly for better format detection
+      if (mimeType) {
+        return mimeType;
+      }
+    }
+    
+    // Fallback to default
+    return 'audio/webm'; // Most common default for MediaRecorder
   }
 
   private handleFileSelection(filePaths: string[]): void {
